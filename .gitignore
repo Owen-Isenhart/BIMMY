@@ -1,0 +1,43 @@
+# Build directories and generated files
+/build/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# CPack artifacts
+CPackConfig.cmake
+CPackSourceConfig.cmake
+*.tar.gz
+*.zip
+
+# Executables and binary artifacts
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.o
+*.obj
+
+# Debug/profiling artifacts
+*.dSYM/
+*.stackdump
+*.core
+vgcore.*
+
+# IDE/editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ImGui runtime state
+imgui.ini
