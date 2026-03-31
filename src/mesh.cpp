@@ -6,10 +6,10 @@
 namespace {
 void AppendQuad(MeshCpu& mesh, const glm::vec3& n, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, const glm::vec3& d) {
   const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-  mesh.vertices.push_back({a, n});
-  mesh.vertices.push_back({b, n});
-  mesh.vertices.push_back({c, n});
-  mesh.vertices.push_back({d, n});
+  mesh.vertices.push_back({a, n, glm::vec2(0.0f, 0.0f)});
+  mesh.vertices.push_back({b, n, glm::vec2(1.0f, 0.0f)});
+  mesh.vertices.push_back({c, n, glm::vec2(1.0f, 1.0f)});
+  mesh.vertices.push_back({d, n, glm::vec2(0.0f, 1.0f)});
   mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 0, base + 2, base + 3});
 }
 }
@@ -34,6 +34,9 @@ GpuMesh::GpuMesh(const MeshCpu& mesh) {
 
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, normal)));
+
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void*>(offsetof(Vertex, uv)));
 
   glBindVertexArray(0);
 }
@@ -93,6 +96,8 @@ MeshCpu CreateCylinderMesh(int segments) {
   for (int i = 0; i < segments; ++i) {
     const float a0 = i * step;
     const float a1 = (i + 1) * step;
+    const float u0 = static_cast<float>(i) / static_cast<float>(segments);
+    const float u1 = static_cast<float>(i + 1) / static_cast<float>(segments);
     glm::vec3 p0(cosf(a0) * 0.5f, -halfH, sinf(a0) * 0.5f);
     glm::vec3 p1(cosf(a1) * 0.5f, -halfH, sinf(a1) * 0.5f);
     glm::vec3 p2(cosf(a1) * 0.5f, halfH, sinf(a1) * 0.5f);
@@ -101,22 +106,22 @@ MeshCpu CreateCylinderMesh(int segments) {
     glm::vec3 n1 = glm::normalize(glm::vec3(p1.x, 0.0f, p1.z));
 
     std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-    mesh.vertices.push_back({p0, n0});
-    mesh.vertices.push_back({p1, n1});
-    mesh.vertices.push_back({p2, n1});
-    mesh.vertices.push_back({p3, n0});
+    mesh.vertices.push_back({p0, n0, glm::vec2(u0, 0.0f)});
+    mesh.vertices.push_back({p1, n1, glm::vec2(u1, 0.0f)});
+    mesh.vertices.push_back({p2, n1, glm::vec2(u1, 1.0f)});
+    mesh.vertices.push_back({p3, n0, glm::vec2(u0, 1.0f)});
     mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 0, base + 2, base + 3});
 
     std::uint32_t baseTop = static_cast<std::uint32_t>(mesh.vertices.size());
-    mesh.vertices.push_back({glm::vec3(0.0f, halfH, 0.0f), glm::vec3(0, 1, 0)});
-    mesh.vertices.push_back({p3, glm::vec3(0, 1, 0)});
-    mesh.vertices.push_back({p2, glm::vec3(0, 1, 0)});
+    mesh.vertices.push_back({glm::vec3(0.0f, halfH, 0.0f), glm::vec3(0, 1, 0), glm::vec2(0.5f, 0.5f)});
+    mesh.vertices.push_back({p3, glm::vec3(0, 1, 0), glm::vec2(p3.x + 0.5f, p3.z + 0.5f)});
+    mesh.vertices.push_back({p2, glm::vec3(0, 1, 0), glm::vec2(p2.x + 0.5f, p2.z + 0.5f)});
     mesh.indices.insert(mesh.indices.end(), {baseTop + 0, baseTop + 1, baseTop + 2});
 
     std::uint32_t baseBottom = static_cast<std::uint32_t>(mesh.vertices.size());
-    mesh.vertices.push_back({glm::vec3(0.0f, -halfH, 0.0f), glm::vec3(0, -1, 0)});
-    mesh.vertices.push_back({p1, glm::vec3(0, -1, 0)});
-    mesh.vertices.push_back({p0, glm::vec3(0, -1, 0)});
+    mesh.vertices.push_back({glm::vec3(0.0f, -halfH, 0.0f), glm::vec3(0, -1, 0), glm::vec2(0.5f, 0.5f)});
+    mesh.vertices.push_back({p1, glm::vec3(0, -1, 0), glm::vec2(p1.x + 0.5f, p1.z + 0.5f)});
+    mesh.vertices.push_back({p0, glm::vec3(0, -1, 0), glm::vec2(p0.x + 0.5f, p0.z + 0.5f)});
     mesh.indices.insert(mesh.indices.end(), {baseBottom + 0, baseBottom + 1, baseBottom + 2});
   }
 
@@ -135,19 +140,19 @@ MeshCpu CreatePrismMesh() {
   auto addTri = [&](const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) {
     glm::vec3 n = glm::normalize(glm::cross(p1 - p0, p2 - p0));
     std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-    mesh.vertices.push_back({p0, n});
-    mesh.vertices.push_back({p1, n});
-    mesh.vertices.push_back({p2, n});
+    mesh.vertices.push_back({p0, n, glm::vec2(0.0f, 0.0f)});
+    mesh.vertices.push_back({p1, n, glm::vec2(1.0f, 0.0f)});
+    mesh.vertices.push_back({p2, n, glm::vec2(0.5f, 1.0f)});
     mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2});
   };
 
   auto addQuad = [&](const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3) {
     glm::vec3 n = glm::normalize(glm::cross(p1 - p0, p2 - p0));
     std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
-    mesh.vertices.push_back({p0, n});
-    mesh.vertices.push_back({p1, n});
-    mesh.vertices.push_back({p2, n});
-    mesh.vertices.push_back({p3, n});
+    mesh.vertices.push_back({p0, n, glm::vec2(0.0f, 0.0f)});
+    mesh.vertices.push_back({p1, n, glm::vec2(1.0f, 0.0f)});
+    mesh.vertices.push_back({p2, n, glm::vec2(1.0f, 1.0f)});
+    mesh.vertices.push_back({p3, n, glm::vec2(0.0f, 1.0f)});
     mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 0, base + 2, base + 3});
   };
 
@@ -157,5 +162,19 @@ MeshCpu CreatePrismMesh() {
   addQuad(a2, a, c, c2);
   addQuad(b, b2, c2, c);
 
+  return mesh;
+}
+
+MeshCpu CreatePlaneMesh() {
+  MeshCpu mesh;
+  const glm::vec3 n(0.0f, 1.0f, 0.0f);
+  const std::uint32_t base = static_cast<std::uint32_t>(mesh.vertices.size());
+
+  mesh.vertices.push_back({glm::vec3(-0.5f, 0.0f, -0.5f), n, glm::vec2(0.0f, 0.0f)});
+  mesh.vertices.push_back({glm::vec3(0.5f, 0.0f, -0.5f), n, glm::vec2(1.0f, 0.0f)});
+  mesh.vertices.push_back({glm::vec3(0.5f, 0.0f, 0.5f), n, glm::vec2(1.0f, 1.0f)});
+  mesh.vertices.push_back({glm::vec3(-0.5f, 0.0f, 0.5f), n, glm::vec2(0.0f, 1.0f)});
+
+  mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 0, base + 2, base + 3});
   return mesh;
 }

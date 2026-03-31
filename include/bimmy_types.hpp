@@ -8,6 +8,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glad/gl.h>
 
 constexpr float kPi = 3.14159265359f;
 
@@ -18,27 +19,27 @@ enum class GeometryType {
 };
 
 enum class MaterialType {
+  SheetMetal,
+  Grass,
   Concrete,
-  Steel,
-  Timber,
+  RustedMetal,
+  Brick,
+  Roof,
+  Wood,
 };
 
 struct MaterialDefinition {
   std::string name;
   float costPerUnitVolume;
-  glm::vec3 albedo;
-  float roughness;
-  float specularStrength;
+  GLuint albedoMap = 0;
+  GLuint normalMap = 0;
+  GLuint metallicMap = 0;
+  GLuint roughnessMap = 0;
+  GLuint aoMap = 0;
 };
 
-inline const std::unordered_map<MaterialType, MaterialDefinition>& MaterialCatalog() {
-  static const std::unordered_map<MaterialType, MaterialDefinition> kCatalog = {
-    {MaterialType::Concrete, {"Concrete", 140.0f, glm::vec3(0.66f, 0.66f, 0.67f), 0.9f, 0.2f}},
-    {MaterialType::Steel, {"Steel", 320.0f, glm::vec3(0.72f, 0.74f, 0.78f), 0.2f, 0.85f}},
-    {MaterialType::Timber, {"Timber", 95.0f, glm::vec3(0.62f, 0.44f, 0.29f), 0.6f, 0.35f}},
-  };
-  return kCatalog;
-}
+std::unordered_map<MaterialType, MaterialDefinition>& MutableMaterialCatalog();
+const std::unordered_map<MaterialType, MaterialDefinition>& MaterialCatalog();
 
 struct Transform {
   glm::vec3 position = glm::vec3(0.0f);
@@ -85,8 +86,9 @@ struct Component {
   }
 
   float Cost() const {
-    const auto it = MaterialCatalog().find(material);
-    if (it == MaterialCatalog().end()) {
+    const auto& catalog = MaterialCatalog();
+    const auto it = catalog.find(material);
+    if (it == catalog.end()) {
       return 0.0f;
     }
     return Volume() * it->second.costPerUnitVolume;

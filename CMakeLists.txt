@@ -60,7 +60,10 @@ add_executable(bimmy
 )
 
 target_include_directories(bimmy PRIVATE include)
-target_compile_definitions(bimmy PRIVATE BIMMY_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+target_compile_definitions(bimmy PRIVATE
+  BIMMY_SHADER_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+  BIMMY_TEXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/textures"
+)
 target_link_libraries(bimmy PRIVATE
   OpenGL::GL
   glfw

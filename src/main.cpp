@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,7 @@ struct AppState {
   bool freeLookToggleHeld = false;
   bool sidebarVisible = true;
   float sidebarAnim = 1.0f;
+  bool showFloor = false;
 
   enum class TransformMode {
     None,
@@ -700,6 +702,32 @@ void AddDefaultComponent(AppState& app, GeometryType type) {
   app.selectedId = c.id;
 }
 
+constexpr std::array<MaterialType, 7> kMaterialOrder = {
+  MaterialType::SheetMetal,
+  MaterialType::Grass,
+  MaterialType::Concrete,
+  MaterialType::RustedMetal,
+  MaterialType::Brick,
+  MaterialType::Roof,
+  MaterialType::Wood,
+};
+
+int MaterialIndex(MaterialType type) {
+  for (int i = 0; i < static_cast<int>(kMaterialOrder.size()); ++i) {
+    if (kMaterialOrder[i] == type) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+MaterialType MaterialFromIndex(int index) {
+  if (index < 0 || index >= static_cast<int>(kMaterialOrder.size())) {
+    return kMaterialOrder[0];
+  }
+  return kMaterialOrder[static_cast<std::size_t>(index)];
+}
+
 void DrawUi(AppState& app, float fps) {
   ImGuiIO& io = ImGui::GetIO();
   ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -724,6 +752,7 @@ void DrawUi(AppState& app, float fps) {
     ImGui::Text("FPS: %.1f", fps);
     ImGui::Separator();
     ImGui::Text("Free-look: %s (toggle: F)", app.freeLookEnabled ? "ON" : "OFF");
+    ImGui::Checkbox("Show Floor Plane", &app.showFloor);
 
     if (ImGui::Button("Add Cuboid")) AddDefaultComponent(app, GeometryType::Cuboid);
     ImGui::SameLine();
@@ -755,14 +784,21 @@ void DrawUi(AppState& app, float fps) {
       ImGui::DragFloat3("Rotation", &selected->transform.rotationEulerDeg.x, 0.7f);
       ImGui::DragFloat3("Scale", &selected->transform.scale.x, 0.02f, 0.05f, 30.0f);
 
-      int materialIndex = 0;
-      if (selected->material == MaterialType::Steel) materialIndex = 1;
-      if (selected->material == MaterialType::Timber) materialIndex = 2;
+      int materialIndex = MaterialIndex(selected->material);
+      const auto& catalog = MaterialCatalog();
 
-      if (ImGui::Combo("Material", &materialIndex, "Concrete\0Steel\0Timber\0")) {
-        if (materialIndex == 0) selected->material = MaterialType::Concrete;
-        if (materialIndex == 1) selected->material = MaterialType::Steel;
-        if (materialIndex == 2) selected->material = MaterialType::Timber;
+      if (ImGui::BeginCombo("Material", catalog.at(MaterialFromIndex(materialIndex)).name.c_str())) {
+        for (int i = 0; i < static_cast<int>(kMaterialOrder.size()); ++i) {
+          const MaterialType type = MaterialFromIndex(i);
+          const bool isSelected = (selected->material == type);
+          if (ImGui::Selectable(catalog.at(type).name.c_str(), isSelected)) {
+            selected->material = type;
+          }
+          if (isSelected) {
+            ImGui::SetItemDefaultFocus();
+          }
+        }
+        ImGui::EndCombo();
       }
 
       ImGui::Text("Volume: %.3f", selected->Volume());
@@ -778,7 +814,7 @@ void DrawUi(AppState& app, float fps) {
       ImGui::TableSetupColumn("Cost");
       ImGui::TableHeadersRow();
 
-      for (MaterialType m : {MaterialType::Concrete, MaterialType::Steel, MaterialType::Timber}) {
+      for (MaterialType m : kMaterialOrder) {
         const auto& def = MaterialCatalog().at(m);
         float v = 0.0f;
         float c = 0.0f;
@@ -1040,7 +1076,7 @@ int main() {
     }
     app.pendingScroll = 0.0f;
 
-    renderer.DrawScene(app.components, app.selectedId, app.camera, fbW, fbH);
+    renderer.DrawScene(app.components, app.selectedId, app.camera, fbW, fbH, app.showFloor);
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

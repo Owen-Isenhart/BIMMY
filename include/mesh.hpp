@@ -9,6 +9,7 @@
 struct Vertex {
   glm::vec3 position;
   glm::vec3 normal;
+  glm::vec2 uv;
 };
 
 struct MeshCpu {
@@ -40,3 +41,4 @@ class GpuMesh {
 MeshCpu CreateCuboidMesh();
 MeshCpu CreateCylinderMesh(int segments);
 MeshCpu CreatePrismMesh();
+MeshCpu CreatePlaneMesh();

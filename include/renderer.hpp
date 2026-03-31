@@ -15,7 +15,7 @@ class Renderer {
   bool Initialize();
   void Shutdown();
 
-  void DrawScene(const std::vector<Component>& components, std::uint32_t selectedId, const OrbitCamera& camera, int viewportWidth, int viewportHeight);
+  void DrawScene(const std::vector<Component>& components, std::uint32_t selectedId, const OrbitCamera& camera, int viewportWidth, int viewportHeight, bool drawFloor);
 
  private:
   bool BuildProgram();
@@ -24,4 +24,5 @@ class Renderer {
   GpuMesh cuboid_;
   GpuMesh cylinder_;
   GpuMesh prism_;
+  GpuMesh plane_;
 };
