@@ -36,6 +36,9 @@ struct MaterialDefinition {
   GLuint metallicMap = 0;
   GLuint roughnessMap = 0;
   GLuint aoMap = 0;
+  GLuint heightMap = 0;
+  float roughnessMultiplier = 1.0f;
+  float metallicMultiplier = 1.0f;
 };
 
 std::unordered_map<MaterialType, MaterialDefinition>& MutableMaterialCatalog();

@@ -7,15 +7,18 @@ uniform mat4 uModel;
 uniform mat4 uView;
 uniform mat4 uProj;
 uniform mat3 uNormalMat;
+uniform mat4 uLightViewProj;
 
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vTexCoords;
+out vec4 vLightSpacePos;
 
 void main() {
   vec4 world = uModel * vec4(aPos, 1.0);
   vWorldPos = world.xyz;
   vNormal = normalize(uNormalMat * aNormal);
   vTexCoords = aTexCoords;
+  vLightSpacePos = uLightViewProj * world;
   gl_Position = uProj * uView * world;
 }

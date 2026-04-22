@@ -110,19 +110,19 @@ MeshCpu CreateCylinderMesh(int segments) {
     mesh.vertices.push_back({p1, n1, glm::vec2(u1, 0.0f)});
     mesh.vertices.push_back({p2, n1, glm::vec2(u1, 1.0f)});
     mesh.vertices.push_back({p3, n0, glm::vec2(u0, 1.0f)});
-    mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 0, base + 2, base + 3});
+    mesh.indices.insert(mesh.indices.end(), {base + 0, base + 2, base + 1, base + 0, base + 3, base + 2});
 
     std::uint32_t baseTop = static_cast<std::uint32_t>(mesh.vertices.size());
     mesh.vertices.push_back({glm::vec3(0.0f, halfH, 0.0f), glm::vec3(0, 1, 0), glm::vec2(0.5f, 0.5f)});
     mesh.vertices.push_back({p3, glm::vec3(0, 1, 0), glm::vec2(p3.x + 0.5f, p3.z + 0.5f)});
     mesh.vertices.push_back({p2, glm::vec3(0, 1, 0), glm::vec2(p2.x + 0.5f, p2.z + 0.5f)});
-    mesh.indices.insert(mesh.indices.end(), {baseTop + 0, baseTop + 1, baseTop + 2});
+    mesh.indices.insert(mesh.indices.end(), {baseTop + 0, baseTop + 2, baseTop + 1});
 
     std::uint32_t baseBottom = static_cast<std::uint32_t>(mesh.vertices.size());
     mesh.vertices.push_back({glm::vec3(0.0f, -halfH, 0.0f), glm::vec3(0, -1, 0), glm::vec2(0.5f, 0.5f)});
     mesh.vertices.push_back({p1, glm::vec3(0, -1, 0), glm::vec2(p1.x + 0.5f, p1.z + 0.5f)});
     mesh.vertices.push_back({p0, glm::vec3(0, -1, 0), glm::vec2(p0.x + 0.5f, p0.z + 0.5f)});
-    mesh.indices.insert(mesh.indices.end(), {baseBottom + 0, baseBottom + 1, baseBottom + 2});
+    mesh.indices.insert(mesh.indices.end(), {baseBottom + 0, baseBottom + 2, baseBottom + 1});
   }
 
   return mesh;
@@ -156,11 +156,17 @@ MeshCpu CreatePrismMesh() {
     mesh.indices.insert(mesh.indices.end(), {base + 0, base + 1, base + 2, base + 0, base + 2, base + 3});
   };
 
-  addTri(a, b, c);
-  addTri(c2, b2, a2);
-  addQuad(a, a2, b2, b);
-  addQuad(a2, a, c, c2);
-  addQuad(b, b2, c2, c);
+  // Back face (-Z)
+  addTri(a, c, b);
+  // Front face (+Z)
+  addTri(a2, b2, c2);
+
+  // Bottom face (-Y)
+  addQuad(a, b, b2, a2);
+  // Left face
+  addQuad(a2, c2, c, a);
+  // Right face
+  addQuad(b, c, c2, b2);
 
   return mesh;
 }

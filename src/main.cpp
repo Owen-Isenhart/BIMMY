@@ -3,6 +3,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -80,7 +83,327 @@ struct AppState {
   glm::vec2 dragAxisScreenDir = glm::vec2(1.0f, 0.0f);
   glm::vec2 dragAxisScreenDir2 = glm::vec2(0.0f, 1.0f);
   float dragWorldPerPixel = 0.01f;
+
+  std::array<char, 256> scenePath{};
+  std::string sceneStatus;
+  bool sceneStatusIsError = false;
 };
+
+Component* FindById(std::vector<Component>& components, std::uint32_t id);
+
+constexpr const char* kSceneFileMagic = "BIMMY_SCENE_V1";
+
+int ToInt(GeometryType type) {
+  return static_cast<int>(type);
+}
+
+int ToInt(MaterialType type) {
+  return static_cast<int>(type);
+}
+
+bool GeometryFromInt(int value, GeometryType& out) {
+  if (value < 0 || value > 2) {
+    return false;
+  }
+  out = static_cast<GeometryType>(value);
+  return true;
+}
+
+bool MaterialFromInt(int value, MaterialType& out) {
+  if (value < 0 || value > 6) {
+    return false;
+  }
+  out = static_cast<MaterialType>(value);
+  return true;
+}
+
+void WriteVec3(std::ostream& os, const glm::vec3& v) {
+  os << v.x << ' ' << v.y << ' ' << v.z;
+}
+
+bool ReadVec3(std::istream& is, glm::vec3& out) {
+  return static_cast<bool>(is >> out.x >> out.y >> out.z);
+}
+
+bool SaveSceneToFile(const AppState& app, const Renderer& renderer, const std::string& path, std::string& outError) {
+  if (path.empty()) {
+    outError = "Path is empty.";
+    return false;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path scenePath(path);
+  if (scenePath.has_parent_path()) {
+    std::filesystem::create_directories(scenePath.parent_path(), ec);
+    if (ec) {
+      outError = "Failed to create scene directory.";
+      return false;
+    }
+  }
+
+  std::ofstream file(path);
+  if (!file.is_open()) {
+    outError = "Failed to open scene file for write.";
+    return false;
+  }
+
+  const Renderer::Settings& settings = renderer.GetSettings();
+
+  file << kSceneFileMagic << '\n';
+  file << "component_count " << app.components.size() << '\n';
+
+  for (const Component& c : app.components) {
+    file << "component "
+         << c.id << ' '
+         << ToInt(c.geometry) << ' '
+         << ToInt(c.material) << ' ';
+    WriteVec3(file, c.dimensions);
+    file << ' ';
+    WriteVec3(file, c.transform.position);
+    file << ' ';
+    WriteVec3(file, c.transform.rotationEulerDeg);
+    file << ' ';
+    WriteVec3(file, c.transform.scale);
+    file << '\n';
+  }
+
+  file << "app " << app.nextId << ' ' << app.selectedId << ' ' << (app.showFloor ? 1 : 0) << ' ' << (app.freeLookEnabled ? 1 : 0) << '\n';
+
+  file << "camera "
+       << app.camera.yawDeg << ' '
+       << app.camera.pitchDeg << ' '
+       << app.camera.distance << ' ';
+  WriteVec3(file, app.camera.target);
+  file << ' ' << (app.camera.firstPerson ? 1 : 0) << ' ';
+  WriteVec3(file, app.camera.firstPersonPosition);
+  file << '\n';
+
+  file << "render "
+       << settings.pointLightPosition.x << ' ' << settings.pointLightPosition.y << ' ' << settings.pointLightPosition.z << ' '
+       << settings.pointLightColor.x << ' ' << settings.pointLightColor.y << ' ' << settings.pointLightColor.z << ' '
+       << settings.pointLightIntensity << ' '
+       << settings.directionalDirection.x << ' ' << settings.directionalDirection.y << ' ' << settings.directionalDirection.z << ' '
+       << settings.directionalColor.x << ' ' << settings.directionalColor.y << ' ' << settings.directionalColor.z << ' '
+       << settings.directionalIntensity << ' '
+       << settings.skyAmbientColor.x << ' ' << settings.skyAmbientColor.y << ' ' << settings.skyAmbientColor.z << ' '
+       << settings.groundAmbientColor.x << ' ' << settings.groundAmbientColor.y << ' ' << settings.groundAmbientColor.z << ' '
+       << settings.ambientIntensity << ' '
+       << settings.exposure << ' '
+       << settings.bloomStrength << ' '
+       << settings.bloomThreshold << ' '
+       << settings.aoStrength << ' '
+       << settings.parallaxHeightScale << ' '
+       << settings.globalRoughnessMultiplier << ' '
+       << settings.globalMetallicMultiplier << ' '
+       << (settings.enableShadows ? 1 : 0) << ' '
+       << (settings.enableBloom ? 1 : 0) << ' '
+       << (settings.enableFxaa ? 1 : 0) << ' '
+       << settings.shadowResolution << ' '
+       << settings.shadowPcfRadius
+       << '\n';
+
+  constexpr std::array<MaterialType, 7> kSaveMaterialOrder = {
+    MaterialType::SheetMetal,
+    MaterialType::Grass,
+    MaterialType::Concrete,
+    MaterialType::RustedMetal,
+    MaterialType::Brick,
+    MaterialType::Roof,
+    MaterialType::Wood,
+  };
+
+  file << "material_overrides " << kSaveMaterialOrder.size() << '\n';
+  for (MaterialType m : kSaveMaterialOrder) {
+    const auto& catalog = MaterialCatalog();
+    const auto it = catalog.find(m);
+    if (it == catalog.end()) {
+      file << ToInt(m) << " 1 1\n";
+      continue;
+    }
+    file << ToInt(m) << ' ' << it->second.roughnessMultiplier << ' ' << it->second.metallicMultiplier << '\n';
+  }
+
+  if (!file.good()) {
+    outError = "Failed while writing scene file.";
+    return false;
+  }
+
+  return true;
+}
+
+bool LoadSceneFromFile(AppState& app, Renderer& renderer, const std::string& path, std::string& outError) {
+  if (path.empty()) {
+    outError = "Path is empty.";
+    return false;
+  }
+
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    outError = "Failed to open scene file.";
+    return false;
+  }
+
+  std::string magic;
+  std::getline(file, magic);
+  if (magic != kSceneFileMagic) {
+    outError = "Invalid scene file header.";
+    return false;
+  }
+
+  std::string tag;
+  std::size_t count = 0;
+  if (!(file >> tag >> count) || tag != "component_count") {
+    outError = "Invalid scene component count block.";
+    return false;
+  }
+
+  std::vector<Component> loadedComponents;
+  loadedComponents.reserve(count);
+
+  for (std::size_t i = 0; i < count; ++i) {
+    std::uint32_t id = 0;
+    int g = 0;
+    int m = 0;
+    Component c;
+
+    if (!(file >> tag >> id >> g >> m) || tag != "component") {
+      outError = "Invalid component entry in scene file.";
+      return false;
+    }
+    if (!GeometryFromInt(g, c.geometry) || !MaterialFromInt(m, c.material)) {
+      outError = "Invalid enum value in component entry.";
+      return false;
+    }
+    c.id = id;
+
+    if (!ReadVec3(file, c.dimensions) || !ReadVec3(file, c.transform.position) ||
+        !ReadVec3(file, c.transform.rotationEulerDeg) || !ReadVec3(file, c.transform.scale)) {
+      outError = "Invalid transform data in component entry.";
+      return false;
+    }
+
+    loadedComponents.push_back(c);
+  }
+
+  std::uint32_t nextId = 1;
+  std::uint32_t selectedId = 0;
+  int showFloor = 0;
+  int freeLook = 0;
+  if (!(file >> tag >> nextId >> selectedId >> showFloor >> freeLook) || tag != "app") {
+    outError = "Invalid app block in scene file.";
+    return false;
+  }
+
+  OrbitCamera loadedCamera;
+  int firstPerson = 0;
+  if (!(file >> tag >> loadedCamera.yawDeg >> loadedCamera.pitchDeg >> loadedCamera.distance) || tag != "camera") {
+    outError = "Invalid camera block in scene file.";
+    return false;
+  }
+  if (!ReadVec3(file, loadedCamera.target) || !(file >> firstPerson) || !ReadVec3(file, loadedCamera.firstPersonPosition)) {
+    outError = "Invalid camera values in scene file.";
+    return false;
+  }
+  loadedCamera.firstPerson = (firstPerson != 0);
+
+  Renderer::Settings loadedSettings = renderer.GetSettings();
+  int enableShadows = 1;
+  int enableBloom = 1;
+  int enableFxaa = 1;
+  if (!(file >> tag) || tag != "render") {
+    outError = "Invalid render block in scene file.";
+    return false;
+  }
+
+  if (!(file
+        >> loadedSettings.pointLightPosition.x >> loadedSettings.pointLightPosition.y >> loadedSettings.pointLightPosition.z
+        >> loadedSettings.pointLightColor.x >> loadedSettings.pointLightColor.y >> loadedSettings.pointLightColor.z
+        >> loadedSettings.pointLightIntensity
+        >> loadedSettings.directionalDirection.x >> loadedSettings.directionalDirection.y >> loadedSettings.directionalDirection.z
+        >> loadedSettings.directionalColor.x >> loadedSettings.directionalColor.y >> loadedSettings.directionalColor.z
+        >> loadedSettings.directionalIntensity
+        >> loadedSettings.skyAmbientColor.x >> loadedSettings.skyAmbientColor.y >> loadedSettings.skyAmbientColor.z
+        >> loadedSettings.groundAmbientColor.x >> loadedSettings.groundAmbientColor.y >> loadedSettings.groundAmbientColor.z
+        >> loadedSettings.ambientIntensity
+        >> loadedSettings.exposure
+        >> loadedSettings.bloomStrength
+        >> loadedSettings.bloomThreshold
+        >> loadedSettings.aoStrength
+        >> loadedSettings.parallaxHeightScale
+        >> loadedSettings.globalRoughnessMultiplier
+        >> loadedSettings.globalMetallicMultiplier
+        >> enableShadows
+        >> enableBloom
+        >> enableFxaa
+        >> loadedSettings.shadowResolution
+        >> loadedSettings.shadowPcfRadius)) {
+    outError = "Invalid render values in scene file.";
+    return false;
+  }
+  loadedSettings.enableShadows = (enableShadows != 0);
+  loadedSettings.enableBloom = (enableBloom != 0);
+  loadedSettings.enableFxaa = (enableFxaa != 0);
+
+  std::size_t materialOverrideCount = 0;
+  if (!(file >> tag >> materialOverrideCount) || tag != "material_overrides") {
+    outError = "Invalid material override block in scene file.";
+    return false;
+  }
+
+  for (std::size_t i = 0; i < materialOverrideCount; ++i) {
+    int materialIndex = 0;
+    float roughnessMul = 1.0f;
+    float metallicMul = 1.0f;
+    if (!(file >> materialIndex >> roughnessMul >> metallicMul)) {
+      outError = "Invalid material override entry in scene file.";
+      return false;
+    }
+
+    MaterialType materialType = MaterialType::Concrete;
+    if (!MaterialFromInt(materialIndex, materialType)) {
+      continue;
+    }
+
+    auto& catalog = MutableMaterialCatalog();
+    const auto it = catalog.find(materialType);
+    if (it != catalog.end()) {
+      it->second.roughnessMultiplier = roughnessMul;
+      it->second.metallicMultiplier = metallicMul;
+    }
+  }
+
+  if (glm::length(loadedSettings.directionalDirection) < 0.001f) {
+    loadedSettings.directionalDirection = glm::vec3(-0.6f, -1.0f, -0.4f);
+  }
+  loadedSettings.directionalDirection = glm::normalize(loadedSettings.directionalDirection);
+  loadedSettings.shadowPcfRadius = std::clamp(loadedSettings.shadowPcfRadius, 0, 3);
+
+  std::uint32_t maxComponentId = 0;
+  for (const Component& c : loadedComponents) {
+    maxComponentId = std::max(maxComponentId, c.id);
+  }
+
+  app.components = std::move(loadedComponents);
+  app.nextId = std::max<std::uint32_t>(std::max(nextId, maxComponentId + 1), 1u);
+  app.selectedId = selectedId;
+  if (app.selectedId != 0 && FindById(app.components, app.selectedId) == nullptr) {
+    app.selectedId = 0;
+  }
+  app.showFloor = (showFloor != 0);
+  app.freeLookEnabled = (freeLook != 0);
+  app.camera = loadedCamera;
+
+  app.transformMode = AppState::TransformMode::None;
+  app.activeAxis = AppState::GizmoAxis::None;
+  app.constrainedAxis = AppState::GizmoAxis::None;
+  app.draggingGizmo = false;
+  app.rotatingCamera = false;
+  app.pendingScroll = 0.0f;
+
+  renderer.MutableSettings() = loadedSettings;
+
+  return true;
+}
 
 void UpdateFreeLookToggle(AppState& app, GLFWwindow* window, bool allowKeyboardInput) {
   if (!allowKeyboardInput) {
@@ -158,12 +481,6 @@ void UpdateCameraKeyboard(AppState& app, GLFWwindow* window, float dt, bool allo
       app.camera.target += step;
     }
   }
-}
-
-glm::vec3 AxisVector(AppState::GizmoAxis axis) {
-  if (axis == AppState::GizmoAxis::X) return glm::vec3(1.0f, 0.0f, 0.0f);
-  if (axis == AppState::GizmoAxis::Y) return glm::vec3(0.0f, 1.0f, 0.0f);
-  return glm::vec3(0.0f, 0.0f, 1.0f);
 }
 
 bool ProjectWorldToScreen(const glm::vec3& world,
@@ -367,10 +684,10 @@ bool UpdateTransformGizmo(AppState& app,
     AppState::GizmoAxis plane;
     glm::vec3 axisA;
     glm::vec3 axisB;
-    glm::vec2 s0;
-    glm::vec2 s1;
-    glm::vec2 s2;
-    glm::vec2 s3;
+    glm::vec2 s0 = glm::vec2(0.0f);
+    glm::vec2 s1 = glm::vec2(0.0f);
+    glm::vec2 s2 = glm::vec2(0.0f);
+    glm::vec2 s3 = glm::vec2(0.0f);
     bool visible = false;
   };
 
@@ -728,7 +1045,7 @@ MaterialType MaterialFromIndex(int index) {
   return kMaterialOrder[static_cast<std::size_t>(index)];
 }
 
-void DrawUi(AppState& app, float fps) {
+void DrawUi(AppState& app, Renderer& renderer, float fps) {
   ImGuiIO& io = ImGui::GetIO();
   ImGuiViewport* viewport = ImGui::GetMainViewport();
 
@@ -753,6 +1070,45 @@ void DrawUi(AppState& app, float fps) {
     ImGui::Separator();
     ImGui::Text("Free-look: %s (toggle: F)", app.freeLookEnabled ? "ON" : "OFF");
     ImGui::Checkbox("Show Floor Plane", &app.showFloor);
+
+    ImGui::SeparatorText("Scene");
+    ImGui::InputText("Scene File", app.scenePath.data(), app.scenePath.size());
+    if (ImGui::Button("Save Scene")) {
+      std::string error;
+      if (SaveSceneToFile(app, renderer, app.scenePath.data(), error)) {
+        app.sceneStatus = "Scene saved.";
+        app.sceneStatusIsError = false;
+      } else {
+        app.sceneStatus = error;
+        app.sceneStatusIsError = true;
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load Scene")) {
+      std::string error;
+      if (LoadSceneFromFile(app, renderer, app.scenePath.data(), error)) {
+        app.sceneStatus = "Scene loaded.";
+        app.sceneStatusIsError = false;
+      } else {
+        app.sceneStatus = error;
+        app.sceneStatusIsError = true;
+      }
+    }
+    if (!app.sceneStatus.empty()) {
+      if (app.sceneStatusIsError) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", app.sceneStatus.c_str());
+      } else {
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.6f, 1.0f), "%s", app.sceneStatus.c_str());
+      }
+    }
+
+    auto& settings = renderer.MutableSettings();
+    ImGui::SeparatorText("Visual");
+    ImGui::Checkbox("Shadows", &settings.enableShadows);
+    ImGui::Checkbox("Bloom", &settings.enableBloom);
+    ImGui::Checkbox("FXAA", &settings.enableFxaa);
+    ImGui::SliderFloat("Brightness", &settings.exposure, 0.6f, 2.2f);
+    ImGui::SliderFloat("Sun Strength", &settings.directionalIntensity, 0.5f, 5.0f);
 
     if (ImGui::Button("Add Cuboid")) AddDefaultComponent(app, GeometryType::Cuboid);
     ImGui::SameLine();
@@ -799,6 +1155,11 @@ void DrawUi(AppState& app, float fps) {
           }
         }
         ImGui::EndCombo();
+      }
+
+      if (auto matIt = MutableMaterialCatalog().find(selected->material); matIt != MutableMaterialCatalog().end()) {
+        ImGui::SliderFloat("Mat Roughness Mul", &matIt->second.roughnessMultiplier, 0.2f, 2.5f);
+        ImGui::SliderFloat("Mat Metallic Mul", &matIt->second.metallicMultiplier, 0.0f, 2.0f);
       }
 
       ImGui::Text("Volume: %.3f", selected->Volume());
@@ -948,6 +1309,7 @@ int main() {
   }
 
   AppState app;
+  std::snprintf(app.scenePath.data(), app.scenePath.size(), "%s", "scenes/default.bimmy");
   glfwSetWindowUserPointer(window, &app);
   glfwSetScrollCallback(window, [](GLFWwindow* w, double, double yoff) {
     auto* state = static_cast<AppState*>(glfwGetWindowUserPointer(w));
@@ -979,7 +1341,7 @@ int main() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    DrawUi(app, fps);
+    DrawUi(app, renderer, fps);
 
     const bool allowSceneMouse = app.freeLookEnabled || !ImGui::GetIO().WantCaptureMouse;
     const bool allowSceneKeyboard = app.freeLookEnabled || !ImGui::GetIO().WantCaptureKeyboard;
